@@ -17,7 +17,7 @@ const USE_DB = process.env.USEDB;
 const FOLLOWLINK = process.env.FOLLOWLINK
 
 console.log("USEDB: " + USE_DB)
-console.log(KEY_TOKEN)
+//console.log(KEY_TOKEN)
 
 var transporter = nodemailer.createTransport({
   service: 'gmail',

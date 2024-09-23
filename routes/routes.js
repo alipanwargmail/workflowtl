@@ -1672,4 +1672,116 @@ router.delete('/workflowtl/tickets/:id', verifyToken, async (req, res, next) => 
   }
 });
 
+router.get('/workflowtl/salesticketshist/:id', verifyToken, async (req, res, next) => {
+
+  try {
+    const client = await poolworkflow.connect()
+    const sales_id = req.params.id
+    console.log(sales_id)
+
+    client.query('select * from tickets where sales_user_id=$1 and salesapprove is not null', [sales_id], function (err, result) {
+      if (err) {
+        client.release()
+        return res.status(401).json({ result: "ERR", message: "Unauthorized" });
+      }
+      if (result.rowCount > 0) {
+        client.release()
+        return res.status(200).json(result.rows);
+      }
+      else {
+        client.release()
+        return res.status(200).json("");
+      }
+    })
+  }
+  catch (e) {
+    console.log(e)
+    return res.status(500).json({ result: "Error", message: "Server Error" + e })
+  }
+});
+
+router.get('/workflowtl/headeqticketshist/:id', verifyToken, async (req, res, next) => {
+
+  try {
+    const client = await poolworkflow.connect()
+    const sales_id = req.params.id
+    console.log(sales_id)
+
+    client.query('select * from tickets where headeqretailapprove is not null', [], function (err, result) {
+      if (err) {
+        client.release()
+        return res.status(401).json({ result: "ERR", message: "Unauthorized" });
+      }
+      if (result.rowCount > 0) {
+        client.release()
+        return res.status(200).json(result.rows);
+      }
+      else {
+        client.release()
+        return res.status(200).json("");
+      }
+    })
+  }
+  catch (e) {
+    console.log(e)
+    return res.status(500).json({ result: "Error", message: "Server Error" + e })
+  }
+});
+
+router.get('/workflowtl/rmticketshist/:id', verifyToken, async (req, res, next) => {
+
+  try {
+    const client = await poolworkflow.connect()
+    const sales_id = req.params.id
+    console.log(sales_id)
+
+    client.query('select * from tickets where rmapprove is not null', [], function (err, result) {
+      if (err) {
+        client.release()
+        return res.status(401).json({ result: "ERR", message: "Unauthorized" });
+      }
+      if (result.rowCount > 0) {
+        client.release()
+        return res.status(200).json(result.rows);
+      }
+      else {
+        client.release()
+        return res.status(200).json("");
+      }
+    })
+  }
+  catch (e) {
+    console.log(e)
+    return res.status(500).json({ result: "Error", message: "Server Error" + e })
+  }
+});
+
+router.get('/workflowtl/mgmtticketshist/:id', verifyToken, async (req, res, next) => {
+
+  try {
+    const client = await poolworkflow.connect()
+    const sales_id = req.params.id
+    console.log(sales_id)
+
+    client.query('select * from tickets where mgmtapprove is not null', [], function (err, result) {
+      if (err) {
+        client.release()
+        return res.status(401).json({ result: "ERR", message: "Unauthorized" });
+      }
+      if (result.rowCount > 0) {
+        client.release()
+        return res.status(200).json(result.rows);
+      }
+      else {
+        client.release()
+        return res.status(200).json("");
+      }
+    })
+  }
+  catch (e) {
+    console.log(e)
+    return res.status(500).json({ result: "Error", message: "Server Error" + e })
+  }
+});
+
 module.exports = router;

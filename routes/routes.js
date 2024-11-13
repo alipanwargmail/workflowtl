@@ -76,7 +76,7 @@ router.get('/workflowtl/followlink/:token', async function (req, res) {
   console.log("followlink")
   const { token } = req.params
   const workflow = await poolworkflow.connect();
-  
+
   try {
     let result = await workflow.query('select * from followlinktoken where followlinktoken=$1', [token])
     console.log(result)
@@ -222,7 +222,7 @@ router.get('/workflowtl/listticketbyuser/:user', async (req, res) => {
   console.log(puser)
   const workflow = await poolworkflow.connect();
   try {
-    workflow.query("select id, user_id, email, custcode, custname, tradinglimit, to_char(created_at, 'DD-MON-YYYY HH24:MI:SS')created_at, salesapprove, salesrejectreason, salestime, headeqretailapprove, headeqretailrejectreason, headeqretailtime, rmapprove, rmrejectreason, rmtime, mgmtapprove, mgmtrejectreason, mgmttime, status, salesuser, headeqretailuser, rmuser, mgmtuser, recommended_limit, deskripsi, finish_in, waiting_for, sales_id, sales_name, sales_user_id, sales_email from tickets where user_id=$1", [puser], (err, result) => {
+    workflow.query("select id, user_id, email, custcode, custname, tradinglimit, to_char(created_at, 'DD-MON-YYYY HH24:MI:SS')created_at, salesapprove, salesrejectreason, salestime, headeqretailapprove, headeqretailrejectreason, headeqretailtime, rmapprove, rmrejectreason, rmtime, mgmtapprove, mgmtrejectreason, mgmttime, status, salesuser, headeqretailuser, rmuser, mgmtuser, coalesce(recommended_limit, 0) recommended_limit, deskripsi, finish_in, waiting_for, sales_id, sales_name, sales_user_id, sales_email from tickets where user_id=$1", [puser], (err, result) => {
       if (err) {
         console.log(err)
       }
@@ -257,7 +257,7 @@ router.get('/workflowtl/listticketbysales/:salesid', async (req, res) => {
   console.log(psalesid)
   const workflow = await poolworkflow.connect();
   try {
-    workflow.query("select id, user_id, email, custcode, custname, tradinglimit, to_char(created_at, 'DD-MON-YYYY HH24:MI:SS')created_at, salesapprove, salesrejectreason, salestime, headeqretailapprove, headeqretailrejectreason, headeqretailtime, rmapprove, rmrejectreason, rmtime, mgmtapprove, mgmtrejectreason, mgmttime, status, salesuser, headeqretailuser, rmuser, mgmtuser, recommended_limit, deskripsi, finish_in, waiting_for, sales_id, sales_name, sales_user_id, sales_email  from tickets where sales_id=$1 and waiting_for=$2 and status=1", [psalesid, "SALES"], (err, result) => {
+    workflow.query("select id, user_id, email, custcode, custname, tradinglimit, to_char(created_at, 'DD-MON-YYYY HH24:MI:SS')created_at, salesapprove, salesrejectreason, salestime, headeqretailapprove, headeqretailrejectreason, headeqretailtime, rmapprove, rmrejectreason, rmtime, mgmtapprove, mgmtrejectreason, mgmttime, status, salesuser, headeqretailuser, rmuser, mgmtuser, coalesce(recommended_limit, 0) recommended_limit, deskripsi, finish_in, waiting_for, sales_id, sales_name, sales_user_id, sales_email  from tickets where sales_id=$1 and waiting_for=$2 and status=1", [psalesid, "SALES"], (err, result) => {
       if (err) {
         console.log(err)
       }
@@ -272,7 +272,7 @@ router.get('/workflowtl/listticketbysales/:salesid', async (req, res) => {
           workflow.release()
           return res.status(200).json(result.rows);
         }
-        else {          
+        else {
           workflow.release()
           return res.status(200).json(result.rows);
         }
@@ -304,7 +304,7 @@ router.post('/workflowtl/nasabahlogin', async function (req, res) {
             console.log('User [' + puser + '] has logged in.');
             const body = req.body;
             const ptoken = jwt.sign({ user: body }, KEY_TOKEN);
-            
+
             const prole = 'NASABAH'
             replika.query('select custcode,custname,sid,custstatus,approvelimit from customer where user_id=$1', [puser], (err2, result2) => {
               if (err2) {
@@ -496,7 +496,7 @@ router.post('/workflowtl/nonnasabahlogin', async function (req, res) {
       if (err) {
         console.log("error " + err)
         workflow.release()
-        return res.status(200).json({ result: "Not Ok", message: "Server error "+e });
+        return res.status(200).json({ result: "Not Ok", message: "Server error " + e });
       }
       else {
         if (result.rowCount > 0) {
@@ -1413,71 +1413,100 @@ router.get('/workflowtl/tickets/:id', verifyToken, async (req, res, next) => {
   }
 });
 
+router.get('/workflowtl/useraccount/:id', verifyToken, async (req, res, next) => {
+
+  console.log("get /useraccount/" + req.params.id + " called")
+  try {
+    const id = req.params.id
+    const replika = await poolreplika.connect()
+    replika.query("select a.account_no as id, a.account_no || ' - ' || b.custname as name, b.approvelimit From user_account a join customer b on a.account_no=b.custcode where a.user_id=$1 and account_no <> ''", [id], function (err, result) {
+      if (err) {
+        replika.release()
+        return res.status(401).json({ result: "ERR", message: "Unauthorized" });
+      }
+      if (result.rowCount > 0) {
+        replika.release()
+        console.log(result.rows);
+        return res.status(200).json(result.rows);
+      }
+      else {
+        replika.release()
+        return res.status(200).json("");
+      }
+    })
+  }
+  catch (e) {
+    return res.status(403).json({ result: "ERR", message: e.message })
+  }
+});
+
 
 router.post('/workflowtl/tickets', verifyToken, async (req, res, next) => {
 
   console.log("post /tickets called")
   try {
     let { user_id, custcode, tradinglimit } = req.body
+    console.log(req.body)
 
     const client = await poolworkflow.connect()
-    client.query("Select * from tickets where user_id=$1 and status < 6", [user_id], async (err0, checkresult) => {
+    client.query("Select * from tickets where custcode=$1 and status < 6", [custcode], async (err0, checkresult) => {
       if (err0) {
         client.release()
         console.log("err when check tickets " + err0)
         return res.status(200).json({ result: "ERR", message: err0.message })
       }
 
-      if(checkresult.rowCount > 0){
-        
-        return res.status(200).json({result: 'FAILED', message: 'Already Exist, Wait till tickets approved or rejected'})        
+      if (checkresult.rowCount > 0) {
+
+        return res.status(200).json({ result: 'FAILED', message: 'Already Exist, Wait till tickets approved or rejected' })
       }
-      else{
-      //console.log(checkresult.rows[0])
-      //let exist = checkresult.rows[0];
-      const replika = await poolreplika.connect()
-      replika.query("select a.email as custemail,a.custcode,a.custname,a.sales_id, b.sales_name, b.user_id, b.email as salesemail from customer a inner join sales b on a.sales_id=b.sales_id where a.custcode=$1", [custcode], async (err, replikaresult) => {
-        if (err) {
-          console.log("ERROR " + err)
-          client.release()
-          replika.release()
-          return res.status(200).json({ result: "ERR", message: err.message })
-        }
-        console.log(replikaresult.rows[0])
-        let custcode = replikaresult.rows[0].custcode
-        let custname = replikaresult.rows[0].custname
-        let email = replikaresult.rows[0].custemail
-        let sales_id = replikaresult.rows[0].sales_id
-        let sales_name = replikaresult.rows[0].sales_name
-        let sales_user_id = replikaresult.rows[0].user_id
-        let sales_email = replikaresult.rows[0].salesemail        
-
-        client.query("INSERT INTO tickets (user_id, email, custcode, custname, tradinglimit, created_at, status, deskripsi, finish_in, waiting_for, sales_id, sales_name, sales_user_id, sales_email) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, 1, (select deskripsi from status where status=1), (select finish_in from status where status=1),(select waiting_for from status where status=1), $6, $7, $8, $9) RETURNING *, 'OK' result",
-          [user_id, email, custcode, custname, tradinglimit, sales_id, sales_name, sales_user_id, sales_email], async (error, results) => {
-            if (error) {
-              console.log('error ' + error.message)
-              replika.release();
-              client.release()
-              return res.status(200).json({ result: "ERR", message: error.message })
-            }
-            let ticket_id = results.rows[0].id
-            let status = 1
-            let notes = 'Client request by ' + user_id
-
-            await createAuditTrail(ticket_id, status, notes, user_id)
-
-            let custname = results.rows[0].custname
-            let waiting_for = results.rows[0].waiting_for
-            let requestedapprovelimit = results.rows[0].tradinglimit
-            let subject = "Tickets " + ticket_id + " are created by " + user_id + "."
-
-            await sendCreateEmailToSales(ticket_id, custname, waiting_for, custcode, requestedapprovelimit, subject, sales_id, sales_name, sales_user_id, sales_email, 1, user_id)
+      else {
+        //console.log(checkresult.rows[0])
+        //let exist = checkresult.rows[0];
+        const replika = await poolreplika.connect()
+        replika.query("select a.email as custemail,a.custcode,a.custname,a.sales_id, b.sales_name, b.user_id, b.email as salesemail from customer a inner join sales b on a.sales_id=b.sales_id where a.custcode=$1", [custcode], async (err, replikaresult) => {
+          if (err) {
+            console.log("ERROR " + err)
+            client.release()
             replika.release()
-            client.release();
-            return res.status(201).json(results.rows[0])
-          })
-      })
-    }})  
+            return res.status(200).json({ result: "ERR", message: err.message })
+          }
+          console.log(replikaresult.rows[0])
+          let custcode = replikaresult.rows[0].custcode
+          let custname = replikaresult.rows[0].custname
+          let email = replikaresult.rows[0].custemail
+          let sales_id = replikaresult.rows[0].sales_id
+          let sales_name = replikaresult.rows[0].sales_name
+          let sales_user_id = replikaresult.rows[0].user_id
+          let sales_email = replikaresult.rows[0].salesemail
+
+          client.query("INSERT INTO tickets (user_id, email, custcode, custname, tradinglimit, created_at, status, deskripsi, finish_in, waiting_for, sales_id, sales_name, sales_user_id, sales_email) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, 1, (select deskripsi from status where status=1), (select finish_in from status where status=1),(select waiting_for from status where status=1), $6, $7, $8, $9) RETURNING *, 'OK' result",
+            [user_id, email, custcode, custname, tradinglimit, sales_id, sales_name, sales_user_id, sales_email], async (error, results) => {
+              if (error) {
+                console.log('error ' + error.message)
+                replika.release();
+                client.release()
+                return res.status(200).json({ result: "ERR", message: error.message })
+              }
+              let ticket_id = results.rows[0].id
+              let status = 1
+              let notes = 'Client request by ' + user_id
+
+              await createAuditTrail(ticket_id, status, notes, user_id)
+
+              let custname = results.rows[0].custname
+              let waiting_for = results.rows[0].waiting_for
+              let requestedapprovelimit = results.rows[0].tradinglimit
+              let subject = "Tickets " + ticket_id + " are created by " + user_id + "."
+
+              await sendCreateEmailToSales(ticket_id, custname, waiting_for, custcode, requestedapprovelimit, subject, sales_id, sales_name, sales_user_id, sales_email, 1, user_id)
+              replika.release()
+              client.release();
+              return res.status(201).json(results.rows[0])
+            })
+        })
+      }
+    })
   }
   catch (e) {
     console.log(e)
@@ -1679,19 +1708,13 @@ router.get('/workflowtl/salesticketshist/:id', verifyToken, async (req, res, nex
     const sales_id = req.params.id
     console.log(sales_id)
 
-    client.query('select * from tickets where sales_user_id=$1 and salesapprove is not null', [sales_id], function (err, result) {
+    client.query('select id, user_id, email, custcode, custname, tradinglimit, created_at, salesapprove, salesrejectreason, salestime, headeqretailapprove, headeqretailrejectreason, headeqretailtime, rmapprove, rmrejectreason, rmtime, mgmtapprove, mgmtrejectreason, mgmttime, status, salesuser, headeqretailuser, rmuser, mgmtuser, coalesce(recommended_limit, 0) recommended_limit, deskripsi, finish_in, waiting_for, sales_id, sales_name, sales_user_id, sales_email from tickets where sales_user_id=$1 and salesapprove is not null', [sales_id], function (err, result) {
       if (err) {
         client.release()
         return res.status(401).json({ result: "ERR", message: "Unauthorized" });
       }
-      if (result.rowCount > 0) {
-        client.release()
-        return res.status(200).json(result.rows);
-      }
-      else {
-        client.release()
-        return res.status(200).json("");
-      }
+      client.release()
+      return res.status(200).json(result.rows);
     })
   }
   catch (e) {
@@ -1707,19 +1730,14 @@ router.get('/workflowtl/headeqticketshist/:id', verifyToken, async (req, res, ne
     const sales_id = req.params.id
     console.log(sales_id)
 
-    client.query('select * from tickets where headeqretailapprove is not null', [], function (err, result) {
+    client.query('select  id, user_id, email, custcode, custname, tradinglimit, created_at, salesapprove, salesrejectreason, salestime, headeqretailapprove, headeqretailrejectreason, headeqretailtime, rmapprove, rmrejectreason, rmtime, mgmtapprove, mgmtrejectreason, mgmttime, status, salesuser, headeqretailuser, rmuser, mgmtuser, coalesce(recommended_limit, 0) recommended_limit, deskripsi, finish_in, waiting_for, sales_id, sales_name, sales_user_id, sales_email from tickets where headeqretailapprove is not null', [], function (err, result) {
       if (err) {
         client.release()
         return res.status(401).json({ result: "ERR", message: "Unauthorized" });
       }
-      if (result.rowCount > 0) {
-        client.release()
-        return res.status(200).json(result.rows);
-      }
-      else {
-        client.release()
-        return res.status(200).json("");
-      }
+
+      client.release()
+      return res.status(200).json(result.rows);
     })
   }
   catch (e) {
@@ -1735,19 +1753,13 @@ router.get('/workflowtl/rmticketshist/:id', verifyToken, async (req, res, next) 
     const sales_id = req.params.id
     console.log(sales_id)
 
-    client.query('select * from tickets where rmapprove is not null', [], function (err, result) {
+    client.query('select  id, user_id, email, custcode, custname, tradinglimit, created_at, salesapprove, salesrejectreason, salestime, headeqretailapprove, headeqretailrejectreason, headeqretailtime, rmapprove, rmrejectreason, rmtime, mgmtapprove, mgmtrejectreason, mgmttime, status, salesuser, headeqretailuser, rmuser, mgmtuser, coalesce(recommended_limit, 0) recommended_limit, deskripsi, finish_in, waiting_for, sales_id, sales_name, sales_user_id, sales_email from tickets where rmapprove is not null', [], function (err, result) {
       if (err) {
         client.release()
         return res.status(401).json({ result: "ERR", message: "Unauthorized" });
       }
-      if (result.rowCount > 0) {
-        client.release()
-        return res.status(200).json(result.rows);
-      }
-      else {
-        client.release()
-        return res.status(200).json("");
-      }
+      client.release()
+      return res.status(200).json(result.rows);
     })
   }
   catch (e) {
@@ -1763,19 +1775,14 @@ router.get('/workflowtl/mgmtticketshist/:id', verifyToken, async (req, res, next
     const sales_id = req.params.id
     console.log(sales_id)
 
-    client.query('select * from tickets where mgmtapprove is not null', [], function (err, result) {
+    client.query('select  id, user_id, email, custcode, custname, tradinglimit, created_at, salesapprove, salesrejectreason, salestime, headeqretailapprove, headeqretailrejectreason, headeqretailtime, rmapprove, rmrejectreason, rmtime, mgmtapprove, mgmtrejectreason, mgmttime, status, salesuser, headeqretailuser, rmuser, mgmtuser, coalesce(recommended_limit, 0) recommended_limit, deskripsi, finish_in, waiting_for, sales_id, sales_name, sales_user_id, sales_email  from tickets where mgmtapprove is not null', [], function (err, result) {
       if (err) {
         client.release()
         return res.status(401).json({ result: "ERR", message: "Unauthorized" });
       }
-      if (result.rowCount > 0) {
-        client.release()
-        return res.status(200).json(result.rows);
-      }
-      else {
-        client.release()
-        return res.status(200).json("");
-      }
+
+      client.release()
+      return res.status(200).json(result.rows);
     })
   }
   catch (e) {

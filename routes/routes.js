@@ -9,6 +9,22 @@ var smtpTransport = require('nodemailer-smtp-transport');
 const fs = require('fs');
 var sql = require('mssql')
 const crypto = require('crypto')
+const pino = require("pino");
+
+const logger = pino({
+    transport: {
+        target: "pino-pretty", // Makes logs human-readable
+        options: { colorize: true },
+    },
+});
+
+const logFile = pino.destination("app.log"); // Write logs to a file
+const fileLogger = pino(logFile);
+
+// Usage
+logger.info("Server started");
+fileLogger.error("Server started");
+
 
 //const { func } = require('../netlify/functions/dbusingpgpromise.js');
 const router = express.Router();
@@ -16,8 +32,12 @@ const KEY_TOKEN = process.env.SECRETTOKEN
 const USE_DB = process.env.USEDB;
 const FOLLOWLINK = process.env.FOLLOWLINK
 
-console.log("USEDB: " + USE_DB)
-//console.log(KEY_TOKEN)
+function consolelog(txt) {
+  console.log(txt);
+  logger.info(txt);
+}
+consolelog("USEDB: " + USE_DB)
+//consolelog(KEY_TOKEN)
 
 var transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -46,7 +66,7 @@ var relaytransporter = nodemailer.createTransport(smtpTransport({
 router.get('/workflowtl/genhash/:user', async function (req, res) {
   let luser = req.params.user
   let salt = bcrypt.genSalt()
-  console.log(luser);
+  consolelog(luser);
   res.status(200).json({ user: luser });
 });
 
@@ -62,10 +82,10 @@ router.post('/workflowtl/testsmtprelay', async function (req, res) {
   };
   relaytransporter.sendMail(mailOptions, function (error, info) {
     if (error) {
-      console.log(error);
+      consolelog(error);
       res.json({ status: "ERR", message: error })
     } else {
-      console.log('Email sent: ' + info.response);
+      consolelog('Email sent: ' + info.response);
       res.json({ status: "OK", message: info.response })
     }
   });
@@ -73,13 +93,13 @@ router.post('/workflowtl/testsmtprelay', async function (req, res) {
 
 router.get('/workflowtl/followlink/:token', async function (req, res) {
 
-  console.log("followlink")
+  consolelog("followlink")
   const { token } = req.params
   const workflow = await poolworkflow.connect();
 
   try {
     let result = await workflow.query('select * from followlinktoken where followlinktoken=$1', [token])
-    console.log(result)
+    consolelog(result)
     if (result.rowCount > 0) {
       if (result.rows[0].userrole === 'SALES') {
 
@@ -91,7 +111,7 @@ router.get('/workflowtl/followlink/:token', async function (req, res) {
         const lticketid = result.rows[0].ticketid
         const lstatus = "A"
         const lsales_id = "A"
-        console.log(luserid + " " + lusername + " " + " " + lemail + " " + lticketid + " " + lstatus + " " + lsales_id)
+        consolelog(luserid + " " + lusername + " " + " " + lemail + " " + lticketid + " " + lstatus + " " + lsales_id)
         const ptoken = jwt.sign({ user: body }, KEY_TOKEN);
 
         retval = {
@@ -100,11 +120,11 @@ router.get('/workflowtl/followlink/:token', async function (req, res) {
           sales_id: lsales_id, token: ptoken, ticketid: lticketid, refftoken: token
         }
         workflow.release()
-        console.log(retval)
+        consolelog(retval)
         return res.status(200).json(retval);
       }
       else {
-        console.log(result.rows[0].val);
+        consolelog(result.rows[0].val);
         const luserid = result.rows[0].userid
         const lusername = result.rows[0].username
         const lemail = result.rows[0].email
@@ -130,7 +150,7 @@ router.get('/workflowtl/followlink/:token', async function (req, res) {
     return res.status(200).json(retval)
   }
   catch (error) {
-    console.log("ERR " + error)
+    consolelog("ERR " + error)
     workflow.release()
     return res.status(500).json(error)
   }
@@ -169,9 +189,9 @@ router.get('/workflowtl/tesmssql', async (req, res) => {
     request.input('content', sql.NVarChar, content)
     request.input('flag', sql.Bit, flag)
     let querystr = `insert into mail(from, to, subject, content, instime, flag) values ('${from}', '${to}', '${subject}', '${content}', CURRENT_TIMESTAMP, ${flag}})`
-    console.log(querystr)
+    consolelog(querystr)
     let result = await request.query('insert into mail([from], [to], [subject], [content], [instime], [flag]) values (@from, @to, @subject, @content, CURRENT_TIMESTAMP, @flag)')
-    console.log(result)
+    consolelog(result)
     pool.close()
     return res.status(200).json(result)
   }
@@ -191,10 +211,10 @@ router.get('/workflowtl/testmail', function (request, res) {
 
   transporter.sendMail(mailOptions, function (error, info) {
     if (error) {
-      console.log(error);
+      consolelog(error);
       res.json({ status: "ERR", message: error })
     } else {
-      console.log('Email sent: ' + info.response);
+      consolelog('Email sent: ' + info.response);
       res.json({ status: "OK", message: info.response })
     }
   });
@@ -219,21 +239,21 @@ router.get('/workflowtl/new', function (request, response) {
 router.get('/workflowtl/listticketbyuser/:user', async (req, res) => {
 
   let puser = req.params.user;
-  console.log(puser)
+  consolelog(puser)
   const workflow = await poolworkflow.connect();
   try {
     workflow.query("select id, user_id, email, custcode, custname, tradinglimit, to_char(created_at, 'DD-MON-YYYY HH24:MI:SS')created_at, salesapprove, salesrejectreason, salestime, headeqretailapprove, headeqretailrejectreason, headeqretailtime, rmapprove, rmrejectreason, rmtime, mgmtapprove, mgmtrejectreason, mgmttime, status, salesuser, headeqretailuser, rmuser, mgmtuser, coalesce(recommended_limit, 0) recommended_limit, deskripsi, finish_in, waiting_for, sales_id, sales_name, sales_user_id, sales_email from tickets where user_id=$1", [puser], (err, result) => {
       if (err) {
-        console.log(err)
+        consolelog(err)
       }
       else {
         if (result.rowCount > 0) {
           // send records as a response
-          console.log(result.rows[0].id)
-          console.log(result.rows[0].custcode)
-          console.log(result.rows[0].custname)
-          console.log(result.rows[0].tradinglimit)
-          console.log(result.rows[0].email)
+          consolelog(result.rows[0].id)
+          consolelog(result.rows[0].custcode)
+          consolelog(result.rows[0].custname)
+          consolelog(result.rows[0].tradinglimit)
+          consolelog(result.rows[0].email)
           workflow.release()
           return res.status(200).json(result.rows);
         }
@@ -246,7 +266,7 @@ router.get('/workflowtl/listticketbyuser/:user', async (req, res) => {
     })
   }
   catch (e) {
-    console.log.err(e)
+    consolelog.err(e)
     return res.status(500).json({ result: "Error", message: "Server Error" + e })
   }
 });
@@ -254,21 +274,21 @@ router.get('/workflowtl/listticketbyuser/:user', async (req, res) => {
 router.get('/workflowtl/listticketbysales/:salesid', async (req, res) => {
 
   let psalesid = req.params.salesid;
-  console.log(psalesid)
+  consolelog(psalesid)
   const workflow = await poolworkflow.connect();
   try {
     workflow.query("select id, user_id, email, custcode, custname, tradinglimit, to_char(created_at, 'DD-MON-YYYY HH24:MI:SS')created_at, salesapprove, salesrejectreason, salestime, headeqretailapprove, headeqretailrejectreason, headeqretailtime, rmapprove, rmrejectreason, rmtime, mgmtapprove, mgmtrejectreason, mgmttime, status, salesuser, headeqretailuser, rmuser, mgmtuser, coalesce(recommended_limit, 0) recommended_limit, deskripsi, finish_in, waiting_for, sales_id, sales_name, sales_user_id, sales_email  from tickets where sales_id=$1 and waiting_for=$2 and status=1", [psalesid, "SALES"], (err, result) => {
       if (err) {
-        console.log(err)
+        consolelog(err)
       }
       else {
         if (result.rowCount > 0) {
           // send records as a response
-          console.log(result.rows[0].id)
-          console.log(result.rows[0].custcode)
-          console.log(result.rows[0].custname)
-          console.log(result.rows[0].tradinglimit)
-          console.log(result.rows[0].email)
+          consolelog(result.rows[0].id)
+          consolelog(result.rows[0].custcode)
+          consolelog(result.rows[0].custname)
+          consolelog(result.rows[0].tradinglimit)
+          consolelog(result.rows[0].email)
           workflow.release()
           return res.status(200).json(result.rows);
         }
@@ -280,7 +300,7 @@ router.get('/workflowtl/listticketbysales/:salesid', async (req, res) => {
     })
   }
   catch (e) {
-    console.log.err(e)
+    consolelog.err(e)
     return res.status(500).json({ result: "Error", message: "Server Error" + e })
   }
 });
@@ -288,27 +308,27 @@ router.get('/workflowtl/listticketbysales/:salesid', async (req, res) => {
 router.post('/workflowtl/nasabahlogin', async function (req, res) {
   let puser = req.body.user;
   let ppassword = req.body.password;
-  console.log(puser + ', ' + ppassword)
+  consolelog(puser + ', ' + ppassword)
   const replika = await poolreplika.connect();
   try {
-    console.log("db connected")
+    consolelog("db connected")
     replika.query('select user_id, crypt($1, hash_password)=hash_password val, user_name, email_address, status from users where user_id = $2', [ppassword, puser], (err, result) => {
       if (err) {
-        console.log("error")
+        consolelog("error")
       }
       else {
         if (result.rowCount > 0) {
-          console.log(result.rows[0].val);
+          consolelog(result.rows[0].val);
           if (result.rows[0].val == true) {
-            console.log("signon " + puser + " result is true")
-            console.log('User [' + puser + '] has logged in.');
+            consolelog("signon " + puser + " result is true")
+            consolelog('User [' + puser + '] has logged in.');
             const body = req.body;
             const ptoken = jwt.sign({ user: body }, KEY_TOKEN);
 
             const prole = 'NASABAH'
             replika.query('select custcode,custname,sid,custstatus,approvelimit from customer where user_id=$1', [puser], (err2, result2) => {
               if (err2) {
-                console.log("error2")
+                consolelog("error2")
               }
               else {
                 if (result2.rowCount > 0) {
@@ -330,7 +350,7 @@ router.post('/workflowtl/nasabahlogin', async function (req, res) {
                   });
                 }
                 else {
-                  console.log("Error on customer validation");
+                  consolelog("Error on customer validation");
                   replika.release()
                   return res.status(200).json({ result: "Not Ok", message: "Error on customer validation" });
                 }
@@ -338,13 +358,13 @@ router.post('/workflowtl/nasabahlogin', async function (req, res) {
             })
           }
           else {
-            console.log("Error on password validation");
+            consolelog("Error on password validation");
             replika.release()
             return res.status(200).json({ result: "Not Ok", message: "Error on password validation" });
           }
         }
         else {
-          console.log("Invalid userid or password");
+          consolelog("Invalid userid or password");
           replika.release()
           return res.status(200).json({ result: "Not Ok", message: "Invalid userid or password" });
         }
@@ -352,7 +372,7 @@ router.post('/workflowtl/nasabahlogin', async function (req, res) {
     })
   }
   catch (e) {
-    console.log.err(e)
+    consolelog.err(e)
     return res.status(500).json({ result: "Error", message: "Server Error" + e })
   }
 });
@@ -360,25 +380,25 @@ router.post('/workflowtl/nasabahlogin', async function (req, res) {
 router.post('/workflowtl/saleslogin', async function (req, res) {
   let puser = req.body.user;
   let ppassword = req.body.password;
-  console.log(puser + ', ' + ppassword)
+  consolelog(puser + ', ' + ppassword)
   const replika = await poolreplika.connect();
   //const replika = await poolworkflow.connect();
   try {
-    console.log("db connected")
+    consolelog("db connected")
     //replika.query('select user_id, crypt($1, hash_password)=hash_password val, user_name, email_address, status from users where user_id = $2', [ppassword, puser], (err, result) => {
     replika.query('select a.user_id, crypt($1, a.hash_password)=a.hash_password val, a.user_name, a.email_address, a.status, b.sales_id from users a inner join sales b on a.user_id=b.user_id where a.user_id = $2', [ppassword, puser], (err, result) => {
       //tabel sales dan users di workflow
       //replika.query('select a.user_id, crypt($1, a.hash_password)=a.hash_password val, a.user_name, a.email_address, a.status, b.sales_id from users_dxtrade a inner join sales b on a.user_id=b.user_id where a.user_id = $2', [ppassword, puser], (err, result) => {
       if (err) {
-        console.log("error")
-        console.log(err)
+        consolelog("error")
+        consolelog(err)
       }
       else {
         if (result.rowCount > 0) {
-          console.log(result.rows[0].val);
+          consolelog(result.rows[0].val);
           if (result.rows[0].val === true) {
-            console.log("signon " + puser + " result is true")
-            console.log('User [' + puser + '] has logged in.');
+            consolelog("signon " + puser + " result is true")
+            consolelog('User [' + puser + '] has logged in.');
             const body = req.body;
             const prole = 'SALES'
             const luserid = result.rows[0].user_id
@@ -386,7 +406,7 @@ router.post('/workflowtl/saleslogin', async function (req, res) {
             const lemail = result.rows[0].email_address
             const lstatus = result.rows[0].status
             const lsales_id = result.rows[0].sales_id
-            console.log(luserid + " " + lusername + " " + " " + lemail + " " + lstatus + " " + lsales_id)
+            consolelog(luserid + " " + lusername + " " + " " + lemail + " " + lstatus + " " + lsales_id)
             const ptoken = jwt.sign({ user: body }, KEY_TOKEN);
             replika.release
             return res.status(200).json({
@@ -396,13 +416,13 @@ router.post('/workflowtl/saleslogin', async function (req, res) {
             });
           }
           else {
-            console.log("Error on password validation");
+            consolelog("Error on password validation");
             replika.release()
             return res.status(200).json({ result: "Not Ok", message: "Error on password validation" });
           }
         }
         else {
-          console.log("Invalid userid or password");
+          consolelog("Invalid userid or password");
           replika.release()
           return res.status(200).json({ result: "Not Ok", message: "Invalid userid or password" });
         }
@@ -410,7 +430,7 @@ router.post('/workflowtl/saleslogin', async function (req, res) {
     })
   }
   catch (e) {
-    console.log.err(e)
+    consolelog.err(e)
     return res.status(500).json({ result: "Error", message: "Server Error" + e })
   }
 });
@@ -418,27 +438,27 @@ router.post('/workflowtl/saleslogin', async function (req, res) {
 router.post('/workflowtl/nasabahlogin', async function (req, res) {
   let puser = req.body.user;
   let ppassword = req.body.password;
-  console.log(puser + ', ' + ppassword)
+  consolelog(puser + ', ' + ppassword)
   const replika = await poolreplika.connect();
   try {
-    console.log("db connected")
+    consolelog("db connected")
     replika.query('select user_id, crypt($1, hash_password)=hash_password val, user_name, email_address, status from users where user_id = $2', [ppassword, puser], (err, result) => {
       if (err) {
-        console.log("error")
+        consolelog("error")
       }
       else {
         if (result.rowCount > 0) {
-          console.log(result.rows[0].val);
+          consolelog(result.rows[0].val);
           if (result.rows[0].val == true) {
-            console.log("signon " + puser + " result is true")
-            console.log('User [' + puser + '] has logged in.');
+            consolelog("signon " + puser + " result is true")
+            consolelog('User [' + puser + '] has logged in.');
             const body = req.body;
             const ptoken = jwt.sign({ user: body }, KEY_TOKEN);
             replika.release()
             const prole = 'NASABAH'
             replika.query('select custcode,custname,sid,custstatus from customer where user_id=$1', [puser], (err2, result2) => {
               if (err2) {
-                console.log("error2")
+                consolelog("error2")
               }
               else {
                 if (result2.rowCount > 0) {
@@ -459,7 +479,7 @@ router.post('/workflowtl/nasabahlogin', async function (req, res) {
                   });
                 }
                 else {
-                  console.log("Error on customer validation");
+                  consolelog("Error on customer validation");
                   replika.release()
                   return res.status(200).json({ result: "Not Ok", message: "Error on customer validation" });
                 }
@@ -467,13 +487,13 @@ router.post('/workflowtl/nasabahlogin', async function (req, res) {
             })
           }
           else {
-            console.log("Error on password validation");
+            consolelog("Error on password validation");
             replika.release()
             return res.status(200).json({ result: "Not Ok", message: "Error on password validation" });
           }
         }
         else {
-          console.log("Invalid userid or password");
+          consolelog("Invalid userid or password");
           replika.release()
           return res.status(200).json({ result: "Not Ok", message: "Invalid userid or password" });
         }
@@ -481,7 +501,7 @@ router.post('/workflowtl/nasabahlogin', async function (req, res) {
     })
   }
   catch (e) {
-    console.log.err(e)
+    consolelog.err(e)
     return res.status(500).json({ result: "Error", message: "Server Error" + e })
   }
 });
@@ -489,12 +509,12 @@ router.post('/workflowtl/nasabahlogin', async function (req, res) {
 router.post('/workflowtl/nonnasabahlogin', async function (req, res) {
   let puser = req.body.user;
   let ppassword = req.body.password;
-  //console.log(puser + ', ' + ppassword)
+  //consolelog(puser + ', ' + ppassword)
   const workflow = await poolworkflow.connect();
   try {
     workflow.query('select userid, crypt($1, password)=password val, username, email, roleuser from users where userid = $2', [ppassword, puser], (err, result) => {
       if (err) {
-        console.log("error " + err)
+        consolelog("error " + err)
         workflow.release()
         return res.status(200).json({ result: "Not Ok", message: "Server error " + e });
       }
@@ -502,7 +522,7 @@ router.post('/workflowtl/nonnasabahlogin', async function (req, res) {
         if (result.rowCount > 0) {
           const body = req.body;
           const ptoken = jwt.sign({ user: body }, KEY_TOKEN);
-          console.log(result.rows[0].val);
+          consolelog(result.rows[0].val);
           const luserid = result.rows[0].userid
           const lusername = result.rows[0].username
           const lemail = result.rows[0].email
@@ -515,7 +535,7 @@ router.post('/workflowtl/nonnasabahlogin', async function (req, res) {
           });
         }
         else {
-          console.log("Invalid userid or password");
+          consolelog("Invalid userid or password");
           workflow.release()
           return res.status(200).json({ result: "Not Ok", message: "Invalid userid or password" });
         }
@@ -523,7 +543,7 @@ router.post('/workflowtl/nonnasabahlogin', async function (req, res) {
     })
   }
   catch (e) {
-    console.log.err(e)
+    consolelog.err(e)
     return res.status(500).json({ result: "Error", message: "Server Error" + e })
   }
 });
@@ -581,7 +601,7 @@ router.get('/workflowtl/customerasset/:custcode', verifyToken, async (req, res, 
               retval.liquidityvalue = result.rows[i].val;
             }
           }
-          console.log(retval)
+          consolelog(retval)
           return res.status(200).json(retval);
         }
         else {
@@ -662,7 +682,7 @@ router.get('/workflowtl/customerdatasummary/:custcode', verifyToken, async (req,
       if (result.rowCount > 0) {
         client.release()
         for (var i = 0; i < result.rowCount; ++i) {
-          console.log(result.rows[i].asset_code);
+          consolelog(result.rows[i].asset_code);
         }
         return res.status(200).json(result.rows);
       }
@@ -679,29 +699,30 @@ router.get('/workflowtl/customerdatasummary/:custcode', verifyToken, async (req,
 
 function verifyToken(req, res, next) {
 
-  console.log(req.headers)
+
+  consolelog(req.headers)
   try {
     const bearerHeader = req.headers['authorization']
-    console.log(bearerHeader)
+    consolelog(bearerHeader)
     if (typeof bearerHeader !== 'undefined') {
       const bearer = bearerHeader.split(' ')
       const bearerToken = bearer[1]
       //req.token = bearerToken
       jwt.verify(bearerToken, KEY_TOKEN, (err, valid) => {
         if (err) {
-          console.log("get /users verify err")
+          consolelog("get /users verify err")
           return res.status(403).json({ result: "ERR", message: "Forbidden" })
         }
       })
       next()
     }
     else {
-      console.log("verifyToken else")
+      consolelog("verifyToken else")
       return res.status(403).json({ Status: "ERR", message: "Invalid token" })
     }
   }
   catch (e) {
-    console.log("verifyToken exception catch")
+    consolelog("verifyToken exception catch")
     return res.status(500).json({ result: "Error", message: "Server Error" + e })
   }
 }
@@ -709,7 +730,7 @@ function verifyToken(req, res, next) {
 async function requestMail(mailOptions) {
 
   try {
-    console.log('requestMail ' + mailOptions)
+    consolelog('requestMail ' + mailOptions)
     const config = {
       user: 'sa',
       password: 'Bahanabs01$@26',
@@ -720,7 +741,7 @@ async function requestMail(mailOptions) {
         trustServerCertificate: true // Change to true for local dev / self-signed certs
       }
     };
-    console.log(mailOptions)
+    consolelog(mailOptions)
     let pool = await sql.connect(config)
     let request = pool.request()
     let from = mailOptions.from
@@ -735,9 +756,9 @@ async function requestMail(mailOptions) {
     request.input('content', sql.NVarChar, content)
     request.input('flag', sql.Bit, flag)
     let querystr = `insert into mail(from, to, subject, content, instime, flag) values ('${from}', '${to}', '${subject}', '${content}', CURRENT_TIMESTAMP, ${flag}))`
-    console.log(querystr)
+    consolelog(querystr)
     let result = await request.query('insert into mail([from], [to], [subject], [content], [instime], [flag]) values (@from, @to, @subject, @content, CURRENT_TIMESTAMP, @flag)')
-    console.log(result)
+    consolelog(result)
     pool.close()
   }
   catch (err) {
@@ -748,12 +769,12 @@ async function requestMail(mailOptions) {
 
 async function createAuditTrail(ticket_id, status, notes, userid) {
 
-  console.log("createAuditTrail " + ticket_id + " " + status + " " + notes + " " + userid)
+  consolelog("createAuditTrail " + ticket_id + " " + status + " " + notes + " " + userid)
   const workflow = await poolworkflow.connect()
   workflow.query("INSERT INTO public.audittrail(ticket_id, status, created_at, notes, userid)	VALUES ($1, $2, CURRENT_TIMESTAMP, $3, $4)",
     [ticket_id, status, notes, userid], (err, result) => {
       if (err) {
-        console.log('err' + err)
+        consolelog('err' + err)
       }
       workflow.release()
     })
@@ -762,14 +783,14 @@ async function createAuditTrail(ticket_id, status, notes, userid) {
 async function sendCreateEmailToSales(ticketid, name, waiting_for, custcode, requestedapprovelimit, subject, sales_id, sales_name, sales_user_id, sales_email, status, user_id) {
 
   try {
-    console.log("sendCreateEmailToSales " + ticketid + " " + name + " " + waiting_for + " " + custcode + " " + requestedapprovelimit + "...")
+    consolelog("sendCreateEmailToSales " + ticketid + " " + name + " " + waiting_for + " " + custcode + " " + requestedapprovelimit + "...")
     const template = fs.readFileSync('templatesales.html', 'utf8');
     const replika = await poolreplika.connect();
     const workflow = await poolworkflow.connect()
 
     replika.query("select * from customer where custcode=$1", [custcode], function (err, result) {
       if (err) {
-        console.log(err)
+        consolelog(err)
       }
       if (result.rowCount > 0) {
         let res = new Object()
@@ -777,16 +798,16 @@ async function sendCreateEmailToSales(ticketid, name, waiting_for, custcode, req
         res.sid = result.rows[0].sid
         res.opendate = result.rows[0].opendate
         res.approvelimit = result.rows[0].approvelimit
-        console.log("data_customer")
+        consolelog("data_customer")
         replika.query("select 'LiquidityValue' as tag,sum(cast((balance-balance_hold)*price*((100-c.haircut)/100) as bigint)) as val from account a left join stock_last_price b on a.asset_code=b.stock_code left join stock_haircut c on a.asset_code=c.stock_code where base_account_no=$1 and account_type='P' union select 'CashBalance' as tag,sum(cast((balance-balance_hold) as bigint)) as val from account where base_account_no=$2 and account_type='C'", [custcode, custcode], async function (err2, result2) {
           if (err2) {
-            console.log(err)
+            consolelog(err)
           }
           if (result2.rowCount > 0) {
             res.cashbalance = "0"
             res.liquidityvalue = "0";
-            console.log("data asset")
-            console.log(result2.rows[0])
+            consolelog("data asset")
+            consolelog(result2.rows[0])
             for (let i = 0; i < result2.rowCount; i++) {
               if (result2.rows[i].tag === 'CashBalance') {
                 res.cashbalance = result2.rows[i].val;
@@ -829,7 +850,7 @@ async function sendCreateEmailToSales(ticketid, name, waiting_for, custcode, req
           payload.recvrname = sales_name
           payload.recommendedapprovelimit = "n.a"
 
-          console.log(payload)
+          consolelog(payload)
           const mailOptions = {
             from: 'ict@bahana.co.id',
             to: email,
@@ -839,11 +860,11 @@ async function sendCreateEmailToSales(ticketid, name, waiting_for, custcode, req
           requestMail(mailOptions)
           // relaytransporter.sendMail(mailOptions, async function (error, info) {
           //   if (error) {
-          //     console.log(error);
+          //     consolelog(error);
           //     let notes = "Send notification email to " + sales_email + " failed. " + error.message
           //     await createAuditTrail(ticketid, status, notes, user_id)
           //   } else {
-          //     console.log('Email sent: ' + info.response);
+          //     consolelog('Email sent: ' + info.response);
           //     let notes = "Send notification email to " + sales_email + "."
           //     await createAuditTrail(ticketid, status, notes, user_id)
           //   }
@@ -854,7 +875,7 @@ async function sendCreateEmailToSales(ticketid, name, waiting_for, custcode, req
 
   }
   catch (e) {
-    console.log(e)
+    consolelog(e)
   }
 }
 
@@ -866,7 +887,7 @@ async function sendApproveEmailToSales(ticketid, name, waiting_for, custcode, re
 
     replika.query("select * from customer where custcode=$1", [custcode], function (err, result) {
       if (err) {
-        console.log(err)
+        consolelog(err)
       }
       if (result.rowCount > 0) {
         let res = new Object()
@@ -874,16 +895,16 @@ async function sendApproveEmailToSales(ticketid, name, waiting_for, custcode, re
         res.sid = result.rows[0].sid
         res.opendate = result.rows[0].opendate
         res.approvelimit = result.rows[0].approvelimit
-        console.log("data_customer")
+        consolelog("data_customer")
         replika.query("select 'LiquidityValue' as tag,sum(cast((balance-balance_hold)*price*((100-c.haircut)/100) as bigint)) as val from account a left join stock_last_price b on a.asset_code=b.stock_code left join stock_haircut c on a.asset_code=c.stock_code where base_account_no=$1 and account_type='P' union select 'CashBalance' as tag,sum(cast((balance-balance_hold) as bigint)) as val from account where base_account_no=$2 and account_type='C'", [custcode, custcode], function (err2, result2) {
           if (err2) {
-            console.log(err)
+            consolelog(err)
           }
           if (result2.rowCount > 0) {
             res.cashbalance = "0"
             res.liquidityvalue = "0";
-            console.log("data asset")
-            console.log(result2.rows[0])
+            consolelog("data asset")
+            consolelog(result2.rows[0])
             for (let i = 0; i < result2.rowCount; i++) {
               if (result2.rows[i].tag === 'CashBalance') {
                 res.cashbalance = result2.rows[i].val;
@@ -920,7 +941,7 @@ async function sendApproveEmailToSales(ticketid, name, waiting_for, custcode, re
           payload.recvrname = sales_name
           payload.recommendedapprovelimit = parseInt(recommended_limit).toLocaleString()
 
-          console.log(payload)
+          consolelog(payload)
           const mailOptions = {
             from: 'ict@bahana.co.id',
             to: email,
@@ -930,11 +951,11 @@ async function sendApproveEmailToSales(ticketid, name, waiting_for, custcode, re
           requestMail(mailOptions)
           // relaytransporter.sendMail(mailOptions, async function (error, info) {
           //   if (error) {
-          //     console.log(error);
+          //     consolelog(error);
           //     let notes = "Send notification email to " + sales_email + " failed. " + error.message
           //     await createAuditTrail(ticketid, status, notes, user_id)
           //   } else {
-          //     console.log('Email sent: ' + info.response);
+          //     consolelog('Email sent: ' + info.response);
           //     let notes = "Send notification email to " + sales_email + "."
           //     await createAuditTrail(ticketid, status, notes, user_id)
           //   }
@@ -945,7 +966,7 @@ async function sendApproveEmailToSales(ticketid, name, waiting_for, custcode, re
 
   }
   catch (e) {
-    console.log(e)
+    consolelog(e)
   }
 }
 
@@ -957,7 +978,7 @@ async function sendApproveEmailToNasabah(ticketid, custname, waiting_for, custco
 
     replika.query("select * from customer where custcode=$1", [custcode], function (err, result) {
       if (err) {
-        console.log(err)
+        consolelog(err)
       }
       if (result.rowCount > 0) {
         let res = new Object()
@@ -965,16 +986,16 @@ async function sendApproveEmailToNasabah(ticketid, custname, waiting_for, custco
         res.sid = result.rows[0].sid
         res.opendate = result.rows[0].opendate
         res.approvelimit = result.rows[0].approvelimit
-        console.log("data_customer")
+        consolelog("data_customer")
         replika.query("select 'LiquidityValue' as tag,sum(cast((balance-balance_hold)*price*((100-c.haircut)/100) as bigint)) as val from account a left join stock_last_price b on a.asset_code=b.stock_code left join stock_haircut c on a.asset_code=c.stock_code where base_account_no=$1 and account_type='P' union select 'CashBalance' as tag,sum(cast((balance-balance_hold) as bigint)) as val from account where base_account_no=$2 and account_type='C'", [custcode, custcode], function (err2, result2) {
           if (err2) {
-            console.log(err)
+            consolelog(err)
           }
           if (result2.rowCount > 0) {
             res.cashbalance = "0"
             res.liquidityvalue = "0";
-            console.log("data asset")
-            console.log(result2.rows[0])
+            consolelog("data asset")
+            consolelog(result2.rows[0])
             for (let i = 0; i < result2.rowCount; i++) {
               if (result2.rows[i].tag === 'CashBalance') {
                 res.cashbalance = result2.rows[i].val;
@@ -1006,7 +1027,7 @@ async function sendApproveEmailToNasabah(ticketid, custname, waiting_for, custco
           payload.recvrname = custname
           payload.recommendedapprovelimit = parseInt(recommended_limit).toLocaleString()
 
-          console.log(payload)
+          consolelog(payload)
           const mailOptions = {
             from: 'ict@bahana.co.id',
             to: email,
@@ -1016,11 +1037,11 @@ async function sendApproveEmailToNasabah(ticketid, custname, waiting_for, custco
           requestMail(mailOptions)
           // relaytransporter.sendMail(mailOptions, async function (error, info) {
           //   if (error) {
-          //     console.log(error.message)
+          //     consolelog(error.message)
           //     let notes = "Send notification email to " + custemail + " failed. " + error.message
           //     await createAuditTrail(ticketid, status, notes, user_id)
           //   } else {
-          //     console.log('Email sent: ' + info.response)
+          //     consolelog('Email sent: ' + info.response)
           //     let notes = "Send notification email to " + custemail + "."
           //     await createAuditTrail(ticketid, status, notes, user_id)
           //   }
@@ -1031,20 +1052,20 @@ async function sendApproveEmailToNasabah(ticketid, custname, waiting_for, custco
 
   }
   catch (e) {
-    console.log(e)
+    consolelog(e)
   }
 }
 
 async function sendApproveEmailToRole(ticketid, name, waiting_for, custcode, requestedapprovelimit, subject, recommended_limit, status, user_id) {
   try {
-    console.log("sendApproveEmailToRole(" + ticketid + "," + name + "," + waiting_for + "," + custcode + "," + requestedapprovelimit + "," + subject + "," + recommended_limit + "," + status + "," + user_id + ")")
+    consolelog("sendApproveEmailToRole(" + ticketid + "," + name + "," + waiting_for + "," + custcode + "," + requestedapprovelimit + "," + subject + "," + recommended_limit + "," + status + "," + user_id + ")")
     const template = fs.readFileSync('templatesales.html', 'utf8');
     const replika = await poolreplika.connect();
     const workflow = await poolworkflow.connect();
     const workflow2 = await poolworkflow.connect();
     replika.query("select * from customer where custcode=$1", [custcode], function (err, result) {
       if (err) {
-        console.log(err)
+        consolelog(err)
       }
       if (result.rowCount > 0) {
         let res = new Object()
@@ -1052,16 +1073,16 @@ async function sendApproveEmailToRole(ticketid, name, waiting_for, custcode, req
         res.sid = result.rows[0].sid
         res.opendate = result.rows[0].opendate
         res.approvelimit = result.rows[0].approvelimit
-        console.log("data_customer")
+        consolelog("data_customer")
         replika.query("select 'LiquidityValue' as tag,sum(cast((balance-balance_hold)*price*((100-c.haircut)/100) as bigint)) as val from account a left join stock_last_price b on a.asset_code=b.stock_code left join stock_haircut c on a.asset_code=c.stock_code where base_account_no=$1 and account_type='P' union select 'CashBalance' as tag,sum(cast((balance-balance_hold) as bigint)) as val from account where base_account_no=$2 and account_type='C'", [custcode, custcode], function (err2, result2) {
           if (err2) {
-            console.log(err)
+            consolelog(err)
           }
           if (result2.rowCount > 0) {
             res.cashbalance = "0"
             res.liquidityvalue = "0";
-            console.log("data asset")
-            console.log(result2.rows[0])
+            consolelog("data asset")
+            consolelog(result2.rows[0])
             for (let i = 0; i < result2.rowCount; i++) {
               if (result2.rows[i].tag === 'CashBalance') {
                 res.cashbalance = result2.rows[i].val;
@@ -1073,7 +1094,7 @@ async function sendApproveEmailToRole(ticketid, name, waiting_for, custcode, req
           }
           workflow.query("select * from users where roleuser=$1", [waiting_for], async function (err, result) {
             if (err) {
-              console.log(err)
+              consolelog(err)
             }
             if (result.rowCount > 0) {
               for (let i = 0; i < result.rowCount; ++i) {
@@ -1108,8 +1129,8 @@ async function sendApproveEmailToRole(ticketid, name, waiting_for, custcode, req
                 else {
                   payload.recommendedapprovelimit = parseInt(recommended_limit).toLocaleString()
                 }
-                console.log("payload");
-                console.log(payload)
+                consolelog("payload");
+                consolelog(payload)
 
 
                 const mailOptions = {
@@ -1121,11 +1142,11 @@ async function sendApproveEmailToRole(ticketid, name, waiting_for, custcode, req
                 requestMail(mailOptions)
                 // relaytransporter.sendMail(mailOptions, async function (error, info) {
                 //   if (error) {
-                //     console.log(error);
+                //     consolelog(error);
                 //     let notes = "Send notification email to " + email + " failed. " + error.message
                 //     await createAuditTrail(ticketid, status, notes, user_id)
                 //   } else {
-                //     console.log('Email sent: ' + info.response);
+                //     consolelog('Email sent: ' + info.response);
                 //     let notes = "Send notification email to " + email + "."
                 //     await createAuditTrail(ticketid, status, notes, user_id)
                 //   }
@@ -1140,19 +1161,19 @@ async function sendApproveEmailToRole(ticketid, name, waiting_for, custcode, req
 
   }
   catch (e) {
-    console.log(e)
+    consolelog(e)
   }
 }
 
 async function sendRejectEmailToSales(ticketid, name, waiting_for, custcode, requestedapprovelimit, subject, status, user_id, rejectreason, sales_id, sales_name, sales_user_id, sales_email, status) {
   try {
-    console.log("sendRejectEmailToSales(" + ticketid + "," + name + "," + waiting_for + "," + custcode + "," + requestedapprovelimit + "," + subject + "," + status + "," + user_id + "," + rejectreason + "," + sales_id + "," + sales_name + "," + sales_user_id + "," + sales_email + "," + status + ")")
+    consolelog("sendRejectEmailToSales(" + ticketid + "," + name + "," + waiting_for + "," + custcode + "," + requestedapprovelimit + "," + subject + "," + status + "," + user_id + "," + rejectreason + "," + sales_id + "," + sales_name + "," + sales_user_id + "," + sales_email + "," + status + ")")
     const template = fs.readFileSync('templatereject.html', 'utf8');
     const ticketname = name
     const replika = await poolreplika.connect();
     replika.query("select * from customer where custcode=$1", [custcode], function (err, result) {
       if (err) {
-        console.log(err)
+        consolelog(err)
       }
       if (result.rowCount > 0) {
         let res = new Object()
@@ -1161,16 +1182,16 @@ async function sendRejectEmailToSales(ticketid, name, waiting_for, custcode, req
         res.opendate = result.rows[0].opendate
         res.approvelimit = result.rows[0].approvelimit
         res.email = result.rows[0].email
-        console.log("data_customer " + res)
+        consolelog("data_customer " + res)
         replika.query("select 'LiquidityValue' as tag,sum(cast((balance-balance_hold)*price*((100-c.haircut)/100) as bigint)) as val from account a left join stock_last_price b on a.asset_code=b.stock_code left join stock_haircut c on a.asset_code=c.stock_code where base_account_no=$1 and account_type='P' union select 'CashBalance' as tag,sum(cast((balance-balance_hold) as bigint)) as val from account where base_account_no=$2 and account_type='C'", [custcode, custcode], function (err2, result2) {
           if (err2) {
-            console.log(err)
+            consolelog(err)
           }
           if (result2.rowCount > 0) {
             res.cashbalance = "0"
             res.liquidityvalue = "0";
-            console.log("data asset")
-            console.log(result2.rows[0])
+            consolelog("data asset")
+            consolelog(result2.rows[0])
             for (let i = 0; i < result2.rowCount; i++) {
               if (result2.rows[i].tag === 'CashBalance') {
                 res.cashbalance = result2.rows[i].val;
@@ -1205,8 +1226,8 @@ async function sendRejectEmailToSales(ticketid, name, waiting_for, custcode, req
             payload.recommendedapprovelimit = "n.a"
             payload.rejectreason = rejectreason
             payload.userid = user_id
-            console.log("payload");
-            console.log(payload)
+            consolelog("payload");
+            consolelog(payload)
             const mailOptions = {
               from: 'ict@bahana.co.id',
               to: email,
@@ -1216,11 +1237,11 @@ async function sendRejectEmailToSales(ticketid, name, waiting_for, custcode, req
             requestMail(mailOptions)
             // relaytransporter.sendMail(mailOptions, async function (error, info) {
             //   if (error) {
-            //     console.log(error);
+            //     consolelog(error);
             //     let notes = "Send notification email to " + email + " failed. " + error.message
             //     await createAuditTrail(ticketid, status, notes, user_id)
             //   } else {
-            //     console.log('Email sent: ' + info.response);
+            //     consolelog('Email sent: ' + info.response);
             //     let notes = "Send notification email to " + email + "."
             //     await createAuditTrail(ticketid, status, notes, user_id)
             //   }
@@ -1232,19 +1253,19 @@ async function sendRejectEmailToSales(ticketid, name, waiting_for, custcode, req
 
   }
   catch (e) {
-    console.log(e)
+    consolelog(e)
   }
 }
 
 async function sendRejectEmailToNasabah(ticketid, name, waiting_for, custcode, requestedapprovelimit, subject, status, user_id, rejectreason) {
   try {
-    console.log("sendRejectEmailToSales(" + ticketid + "," + name + "," + waiting_for + "," + custcode + "," + requestedapprovelimit + "," + subject + "," + status + "," + user_id + "," + rejectreason + ")")
+    consolelog("sendRejectEmailToSales(" + ticketid + "," + name + "," + waiting_for + "," + custcode + "," + requestedapprovelimit + "," + subject + "," + status + "," + user_id + "," + rejectreason + ")")
     const template = fs.readFileSync('templatereject.html', 'utf8');
 
     const replika = await poolreplika.connect();
     replika.query("select * from customer where custcode=$1", [custcode], function (err, result) {
       if (err) {
-        console.log(err)
+        consolelog(err)
       }
       if (result.rowCount > 0) {
         let res = new Object()
@@ -1253,16 +1274,16 @@ async function sendRejectEmailToNasabah(ticketid, name, waiting_for, custcode, r
         res.opendate = result.rows[0].opendate
         res.approvelimit = result.rows[0].approvelimit
         res.email = result.rows[0].email
-        console.log("data_customer " + res)
+        consolelog("data_customer " + res)
         replika.query("select 'LiquidityValue' as tag,sum(cast((balance-balance_hold)*price*((100-c.haircut)/100) as bigint)) as val from account a left join stock_last_price b on a.asset_code=b.stock_code left join stock_haircut c on a.asset_code=c.stock_code where base_account_no=$1 and account_type='P' union select 'CashBalance' as tag,sum(cast((balance-balance_hold) as bigint)) as val from account where base_account_no=$2 and account_type='C'", [custcode, custcode], function (err2, result2) {
           if (err2) {
-            console.log(err)
+            consolelog(err)
           }
           if (result2.rowCount > 0) {
             res.cashbalance = "0"
             res.liquidityvalue = "0";
-            console.log("data asset")
-            console.log(result2.rows[0])
+            consolelog("data asset")
+            consolelog(result2.rows[0])
             for (let i = 0; i < result2.rowCount; i++) {
               if (result2.rows[i].tag === 'CashBalance') {
                 res.cashbalance = result2.rows[i].val;
@@ -1291,8 +1312,8 @@ async function sendRejectEmailToNasabah(ticketid, name, waiting_for, custcode, r
             payload.requestedapprovelimit = parseInt(requestedapprovelimit).toLocaleString()
             payload.recommendedapprovelimit = "n.a"
             payload.rejectreason = rejectreason
-            console.log("payload:")
-            console.log(payload)
+            consolelog("payload:")
+            consolelog(payload)
             const mailOptions = {
               from: 'ict@bahana.co.id',
               to: email,
@@ -1303,11 +1324,11 @@ async function sendRejectEmailToNasabah(ticketid, name, waiting_for, custcode, r
 
             // relaytransporter.sendMail(mailOptions, async function (error, info) {
             //   if (error) {
-            //     console.log(error);
+            //     consolelog(error);
             //     let notes = "Send notification email to " + email + " failed. " + error.message
             //     await createAuditTrail(ticketid, status, notes, user_id)
             //   } else {
-            //     console.log('Email sent: ' + info.response);
+            //     consolelog('Email sent: ' + info.response);
             //     let notes = "Send notification email to " + email + "."
             //     await createAuditTrail(ticketid, status, notes, user_id)
             //   }
@@ -1321,7 +1342,7 @@ async function sendRejectEmailToNasabah(ticketid, name, waiting_for, custcode, r
 
   }
   catch (e) {
-    console.log(e)
+    consolelog(e)
   }
 }
 
@@ -1333,7 +1354,7 @@ router.get('/workflowtl/tickets', verifyToken, async (req, res, next) => {
     const client = await poolworkflow.connect()
     client.query('select * from tickets', function (err, result) {
       if (err) {
-        console.log(err)
+        consolelog(err)
         client.release()
         return res.status(401).json({ result: "ERR", message: "Unauthorized" });
       }
@@ -1348,13 +1369,13 @@ router.get('/workflowtl/tickets', verifyToken, async (req, res, next) => {
 
 router.get('/workflowtl/ticketsbyrole/:role', verifyToken, async (req, res, next) => {
 
-  console.log("get /ticketsbyrole called")
+  consolelog("get /ticketsbyrole called")
   const role = req.params.role
   try {
     const client = await poolworkflow.connect()
     client.query('select * from tickets where waiting_for=$1', [role], function (err, result) {
       if (err) {
-        console.log(err)
+        consolelog(err)
         client.release()
         return res.status(401).json({ result: "ERR", message: err });
       }
@@ -1374,7 +1395,7 @@ router.get('/workflowtl/audittrail/:ticketid', verifyToken, async (req, res, nex
     const client = await poolworkflow.connect()
     client.query("select ROW_NUMBER() OVER(ORDER BY a.id ) as no,a.id,a.created_at, c.deskripsi, a.notes, a.userid from audittrail  a inner join tickets b on a.ticket_id=b.id inner join status c on a.status=c.status where a.ticket_id=$1 order by a.id", [ticketid], function (err, result) {
       if (err) {
-        console.log(err)
+        consolelog(err)
         client.release()
         return res.status(401).json({ result: "ERR", message: err });
       }
@@ -1389,7 +1410,7 @@ router.get('/workflowtl/audittrail/:ticketid', verifyToken, async (req, res, nex
 
 router.get('/workflowtl/tickets/:id', verifyToken, async (req, res, next) => {
 
-  console.log("get /tickets/" + req.params.id + " called")
+  consolelog("get /tickets/" + req.params.id + " called")
   try {
     const id = req.params.id
     const client = await poolworkflow.connect()
@@ -1415,7 +1436,7 @@ router.get('/workflowtl/tickets/:id', verifyToken, async (req, res, next) => {
 
 router.get('/workflowtl/useraccount/:id', verifyToken, async (req, res, next) => {
 
-  console.log("get /useraccount/" + req.params.id + " called")
+  consolelog("get /useraccount/" + req.params.id + " called")
   try {
     const id = req.params.id
     const replika = await poolreplika.connect()
@@ -1426,7 +1447,7 @@ router.get('/workflowtl/useraccount/:id', verifyToken, async (req, res, next) =>
       }
       if (result.rowCount > 0) {
         replika.release()
-        console.log(result.rows);
+        consolelog(result.rows);
         return res.status(200).json(result.rows);
       }
       else {
@@ -1443,16 +1464,16 @@ router.get('/workflowtl/useraccount/:id', verifyToken, async (req, res, next) =>
 
 router.post('/workflowtl/tickets', verifyToken, async (req, res, next) => {
 
-  console.log("post /tickets called")
+  consolelog("post /tickets called")
   try {
     let { user_id, custcode, tradinglimit } = req.body
-    console.log(req.body)
+    consolelog(req.body)
 
     const client = await poolworkflow.connect()
     client.query("Select * from tickets where custcode=$1 and status < 6", [custcode], async (err0, checkresult) => {
       if (err0) {
         client.release()
-        console.log("err when check tickets " + err0)
+        consolelog("err when check tickets " + err0)
         return res.status(200).json({ result: "ERR", message: err0.message })
       }
 
@@ -1461,17 +1482,17 @@ router.post('/workflowtl/tickets', verifyToken, async (req, res, next) => {
         return res.status(200).json({ result: 'FAILED', message: 'Already Exist, Wait till tickets approved or rejected' })
       }
       else {
-        //console.log(checkresult.rows[0])
+        //consolelog(checkresult.rows[0])
         //let exist = checkresult.rows[0];
         const replika = await poolreplika.connect()
         replika.query("select a.email as custemail,a.custcode,a.custname,a.sales_id, b.sales_name, b.user_id, b.email as salesemail from customer a inner join sales b on a.sales_id=b.sales_id where a.custcode=$1", [custcode], async (err, replikaresult) => {
           if (err) {
-            console.log("ERROR " + err)
+            consolelog("ERROR " + err)
             client.release()
             replika.release()
             return res.status(200).json({ result: "ERR", message: err.message })
           }
-          console.log(replikaresult.rows[0])
+          consolelog(replikaresult.rows[0])
           let custcode = replikaresult.rows[0].custcode
           let custname = replikaresult.rows[0].custname
           let email = replikaresult.rows[0].custemail
@@ -1483,7 +1504,7 @@ router.post('/workflowtl/tickets', verifyToken, async (req, res, next) => {
           client.query("INSERT INTO tickets (user_id, email, custcode, custname, tradinglimit, created_at, status, deskripsi, finish_in, waiting_for, sales_id, sales_name, sales_user_id, sales_email) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, 1, (select deskripsi from status where status=1), (select finish_in from status where status=1),(select waiting_for from status where status=1), $6, $7, $8, $9) RETURNING *, 'OK' result",
             [user_id, email, custcode, custname, tradinglimit, sales_id, sales_name, sales_user_id, sales_email], async (error, results) => {
               if (error) {
-                console.log('error ' + error.message)
+                consolelog('error ' + error.message)
                 replika.release();
                 client.release()
                 return res.status(200).json({ result: "ERR", message: error.message })
@@ -1509,7 +1530,7 @@ router.post('/workflowtl/tickets', verifyToken, async (req, res, next) => {
     })
   }
   catch (e) {
-    console.log(e)
+    consolelog(e)
     return res.status(500).json({ result: "ERR", message: e.message })
   }
 });
@@ -1520,12 +1541,12 @@ router.put('/workflowtl/ticketapprove/:id', verifyToken, async (req, res, next) 
     const client = await poolworkflow.connect()
     const id = parseInt(req.params.id)
     let { userid, user_name, role, recommended_limit, refftoken } = req.body
-    console.log("put userid: " + userid + ", role: " + role + ", recommended_limit: " + recommended_limit + " refftoken: " + refftoken)
+    consolelog("put userid: " + userid + ", role: " + role + ", recommended_limit: " + recommended_limit + " refftoken: " + refftoken)
     let querystr = "";
     let audittrailstr = "";
     let status = 1;
     if (refftoken !== null) {
-      console.log("deleting refftoken " + refftoken)
+      consolelog("deleting refftoken " + refftoken)
       await client.query('delete from followlinktoken where followlinktoken=$1', [refftoken])
     }
     if (role === 'SALES') {
@@ -1550,18 +1571,18 @@ router.put('/workflowtl/ticketapprove/:id', verifyToken, async (req, res, next) 
       querystr = "UPDATE tickets SET mgmtuser='" + userid + "',mgmtapprove=true,status=5,deskripsi='Approved by MGMT',finish_in='MGMT',waiting_for='',mgmttime=CURRENT_TIMESTAMP WHERE id=" + id + " returning *";
       audittrailstr = "INSERT INTO public.audittrail(ticket_id, status, created_at, notes, userid)	VALUES (" + id + ", 5, CURRENT_TIMESTAMP, 'Approved by " + userid + "', '" + userid + "')";
     }
-    console.log(querystr)
+    consolelog(querystr)
     client.query(querystr, [], (error, results) => {
 
       if (error) {
-        console.log(error)
+        consolelog(error)
         client.release()
         return res.status(500).json({ result: "Error", message: "2Server Error " + error })
       }
       client.query(audittrailstr, [], (error2, results2) => {
         if (error2) {
-          console.log(audittrailstr)
-          console.log(error2)
+          consolelog(audittrailstr)
+          consolelog(error2)
           client.release()
           return res.status(500).json({ result: "Error", message: "3Server Error " + error2 })
         }
@@ -1605,13 +1626,13 @@ router.put('/workflowtl/ticketreject/:id', verifyToken, async (req, res, next) =
     const client = await poolworkflow.connect()
     const id = parseInt(req.params.id)
     let { userid, user_name, role, rejectreason, refftoken } = req.body
-    console.log("put userid: " + userid + ",user_name: " + user_name + ", role: " + role + ", rejectreason: " + rejectreason)
+    consolelog("put userid: " + userid + ",user_name: " + user_name + ", role: " + role + ", rejectreason: " + rejectreason)
     let querystr = "";
     let status = 0;
     let audittrailstr = ""
     let username = "";
     if (refftoken !== null) {
-      console.log("deleting refftoken " + refftoken)
+      consolelog("deleting refftoken " + refftoken)
       await client.query('delete from followlinktoken where followlinktoken=$1', [refftoken])
     }
 
@@ -1635,18 +1656,18 @@ router.put('/workflowtl/ticketreject/:id', verifyToken, async (req, res, next) =
       audittrailstr = "INSERT INTO public.audittrail(ticket_id, status, created_at, notes, userid)	VALUES (" + id + ", 95, CURRENT_TIMESTAMP, 'Rejected by " + userid + ", Reject reason: " + rejectreason + "', '" + userid + "')";
       status = 95
     }
-    console.log(querystr)
+    consolelog(querystr)
     client.query(querystr, [], (error, results) => {
 
       if (error) {
-        console.log(error)
+        consolelog(error)
         client.release()
         return res.status(500).json({ result: "Error", message: "4Server Error " + error })
       }
       client.query(audittrailstr, [], async (error2, results2) => {
         if (error2) {
-          console.log(audittrailstr)
-          console.log(error2)
+          consolelog(audittrailstr)
+          consolelog(error2)
           client.release()
           return res.status(500).json({ result: "Error", message: "2Server Error " + error })
         }
@@ -1696,7 +1717,7 @@ router.delete('/workflowtl/tickets/:id', verifyToken, async (req, res, next) => 
     })
   }
   catch (e) {
-    console.log(e)
+    consolelog(e)
     return res.status(500).json({ result: "Error", message: "Server Error" + e })
   }
 });
@@ -1706,7 +1727,7 @@ router.get('/workflowtl/salesticketshist/:id', verifyToken, async (req, res, nex
   try {
     const client = await poolworkflow.connect()
     const sales_id = req.params.id
-    console.log(sales_id)
+    consolelog(sales_id)
 
     client.query('select id, user_id, email, custcode, custname, tradinglimit, created_at, salesapprove, salesrejectreason, salestime, headeqretailapprove, headeqretailrejectreason, headeqretailtime, rmapprove, rmrejectreason, rmtime, mgmtapprove, mgmtrejectreason, mgmttime, status, salesuser, headeqretailuser, rmuser, mgmtuser, coalesce(recommended_limit, 0) recommended_limit, deskripsi, finish_in, waiting_for, sales_id, sales_name, sales_user_id, sales_email from tickets where sales_user_id=$1 and salesapprove is not null', [sales_id], function (err, result) {
       if (err) {
@@ -1718,7 +1739,7 @@ router.get('/workflowtl/salesticketshist/:id', verifyToken, async (req, res, nex
     })
   }
   catch (e) {
-    console.log(e)
+    consolelog(e)
     return res.status(500).json({ result: "Error", message: "Server Error" + e })
   }
 });
@@ -1728,7 +1749,7 @@ router.get('/workflowtl/headeqticketshist/:id', verifyToken, async (req, res, ne
   try {
     const client = await poolworkflow.connect()
     const sales_id = req.params.id
-    console.log(sales_id)
+    consolelog(sales_id)
 
     client.query('select  id, user_id, email, custcode, custname, tradinglimit, created_at, salesapprove, salesrejectreason, salestime, headeqretailapprove, headeqretailrejectreason, headeqretailtime, rmapprove, rmrejectreason, rmtime, mgmtapprove, mgmtrejectreason, mgmttime, status, salesuser, headeqretailuser, rmuser, mgmtuser, coalesce(recommended_limit, 0) recommended_limit, deskripsi, finish_in, waiting_for, sales_id, sales_name, sales_user_id, sales_email from tickets where headeqretailapprove is not null', [], function (err, result) {
       if (err) {
@@ -1741,7 +1762,7 @@ router.get('/workflowtl/headeqticketshist/:id', verifyToken, async (req, res, ne
     })
   }
   catch (e) {
-    console.log(e)
+    consolelog(e)
     return res.status(500).json({ result: "Error", message: "Server Error" + e })
   }
 });
@@ -1751,7 +1772,7 @@ router.get('/workflowtl/rmticketshist/:id', verifyToken, async (req, res, next) 
   try {
     const client = await poolworkflow.connect()
     const sales_id = req.params.id
-    console.log(sales_id)
+    consolelog(sales_id)
 
     client.query('select  id, user_id, email, custcode, custname, tradinglimit, created_at, salesapprove, salesrejectreason, salestime, headeqretailapprove, headeqretailrejectreason, headeqretailtime, rmapprove, rmrejectreason, rmtime, mgmtapprove, mgmtrejectreason, mgmttime, status, salesuser, headeqretailuser, rmuser, mgmtuser, coalesce(recommended_limit, 0) recommended_limit, deskripsi, finish_in, waiting_for, sales_id, sales_name, sales_user_id, sales_email from tickets where rmapprove is not null', [], function (err, result) {
       if (err) {
@@ -1763,7 +1784,7 @@ router.get('/workflowtl/rmticketshist/:id', verifyToken, async (req, res, next) 
     })
   }
   catch (e) {
-    console.log(e)
+    consolelog(e)
     return res.status(500).json({ result: "Error", message: "Server Error" + e })
   }
 });
@@ -1773,7 +1794,7 @@ router.get('/workflowtl/mgmtticketshist/:id', verifyToken, async (req, res, next
   try {
     const client = await poolworkflow.connect()
     const sales_id = req.params.id
-    console.log(sales_id)
+    consolelog(sales_id)
 
     client.query('select  id, user_id, email, custcode, custname, tradinglimit, created_at, salesapprove, salesrejectreason, salestime, headeqretailapprove, headeqretailrejectreason, headeqretailtime, rmapprove, rmrejectreason, rmtime, mgmtapprove, mgmtrejectreason, mgmttime, status, salesuser, headeqretailuser, rmuser, mgmtuser, coalesce(recommended_limit, 0) recommended_limit, deskripsi, finish_in, waiting_for, sales_id, sales_name, sales_user_id, sales_email  from tickets where mgmtapprove is not null', [], function (err, result) {
       if (err) {
@@ -1786,7 +1807,7 @@ router.get('/workflowtl/mgmtticketshist/:id', verifyToken, async (req, res, next
     })
   }
   catch (e) {
-    console.log(e)
+    consolelog(e)
     return res.status(500).json({ result: "Error", message: "Server Error" + e })
   }
 });

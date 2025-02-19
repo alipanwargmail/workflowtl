@@ -509,7 +509,7 @@ router.post('/workflowtl/nasabahlogin', async function (req, res) {
 router.post('/workflowtl/nonnasabahlogin', async function (req, res) {
   let puser = req.body.user;
   let ppassword = req.body.password;
-  //consolelog(puser + ', ' + ppassword)
+  consolelog(puser + ', ' + ppassword)
   const workflow = await poolworkflow.connect();
   try {
     workflow.query('select userid, crypt($1, password)=password val, username, email, roleuser from users where userid = $2', [ppassword, puser], (err, result) => {
@@ -519,26 +519,28 @@ router.post('/workflowtl/nonnasabahlogin', async function (req, res) {
         return res.status(200).json({ result: "Not Ok", message: "Server error " + e });
       }
       else {
+      consolelog(result)
         if (result.rowCount > 0) {
-          const body = req.body;
-          const ptoken = jwt.sign({ user: body }, KEY_TOKEN);
-          consolelog(result.rows[0].val);
-          const luserid = result.rows[0].userid
-          const lusername = result.rows[0].username
-          const lemail = result.rows[0].email
-          const lrole = result.rows[0].roleuser
-          workflow.release
-          return res.status(200).json({
-            result: "OK", message: "Login OK", userid: luserid, role: lrole,
-            username: lusername, email: lemail,
-            token: ptoken
-          });
-        }
-        else {
+            consolelog(result.rows[0].val);
+            if (result.rows[0].val == true) {
+              const body = req.body;
+              const ptoken = jwt.sign({ user: body }, KEY_TOKEN);
+              const luserid = result.rows[0].userid
+              const lusername = result.rows[0].username
+              const lemail = result.rows[0].email
+              const lrole = result.rows[0].roleuser
+              workflow.release
+              return res.status(200).json({
+                result: "OK", message: "Login OK", userid: luserid, role: lrole,
+                username: lusername, email: lemail,
+                token: ptoken
+              });
+              }
+            }
+
           consolelog("Invalid userid or password");
           workflow.release()
           return res.status(200).json({ result: "Not Ok", message: "Invalid userid or password" });
-        }
       }
     })
   }
